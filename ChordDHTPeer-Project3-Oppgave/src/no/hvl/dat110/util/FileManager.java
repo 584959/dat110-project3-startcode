@@ -24,11 +24,11 @@ import no.hvl.dat110.util.Hash;
 
 public class FileManager {
 	
-	private BigInteger[] replicafiles;							// array stores replicated files for distribution to matching nodes
-	private int numReplicas;									// let's assume each node manages nfiles (5 for now) - can be changed from the constructor
+	private BigInteger[] replicafiles;	// array stores replicated files for distribution to matching nodes
+	private int numReplicas;			// let's assume each node manages nfiles (5 for now) - can be changed from the constructor
 	private NodeInterface chordnode;
-	private String filepath; 									// absolute filepath
-	private String filename;									// only filename without path and extension
+	private String filepath; 			// absolute filepath
+	private String filename;			// only filename without path and extension
 	private BigInteger hash;
 	private byte[] bytesOfFile;
 	private String sizeOfByte;
@@ -64,11 +64,14 @@ public class FileManager {
 		
 		// store the hash in the replicafiles array.
 
+		for (int i = 0; i < Util.numReplicas; i++) {
+			String replica = filename + i;
+			replicafiles[i] = Hash.hashOf(replica);
+		}
 	}
 	
     /**
-     * 
-     * @param bytesOfFile
+     *
      * @throws RemoteException 
      */
     public int distributeReplicastoPeers() throws RemoteException {
@@ -89,8 +92,21 @@ public class FileManager {
     	// call the saveFileContent() on the successor
     	
     	// increment counter
-    	
-    		
+
+		createReplicaFiles();
+		Random rand = new Random();
+		int index = rand.nextInt(Util.numReplicas - 1);
+
+		for (BigInteger replica: replicafiles) {
+			NodeInterface successor = chordnode.findSuccessor(replica);
+				successor.addKey(replica);
+				if (counter == index) {
+					successor.saveFileContent(filename, replica, bytesOfFile, true);
+				} else {
+					successor.saveFileContent(filename, replica, bytesOfFile, false);
+				}
+				counter++;
+		}
 		return counter;
     }
 	
@@ -115,9 +131,13 @@ public class FileManager {
 		// get the metadata (Message) of the replica from the successor, s (i.e. active peer) of the file
 		
 		// save the metadata in the set succinfo.
-		
+		createReplicaFiles();
+		for (BigInteger replica: replicafiles) {
+			NodeInterface successor = chordnode.findSuccessor(replica);
+			Message message = successor.getFilesMetadata(replica);
+			succinfo.add(message);
+		}
 		this.activeNodesforFile = succinfo;
-		
 		return succinfo;
 	}
 	
@@ -136,10 +156,19 @@ public class FileManager {
 		// use the primaryServer boolean variable contained in the Message class to check if it is the primary or not
 		
 		// return the primary
-		
-		return null; 
+
+		for (Message message: activeNodesforFile) {
+			if (message.isPrimaryServer()) {
+				try {
+					return chordnode.findSuccessor(message.getNodeID()).getPredecessor();
+				} catch (RemoteException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		return null;
 	}
-	
+
     /**
      * Read the content of a file and return the bytes
      * @throws IOException 
@@ -233,7 +262,7 @@ public class FileManager {
 		return sizeOfByte;
 	}
 	/**
-	 * @param size the size to set
+	 * @param sizeOfByte the size to set
 	 */
 	public void setSizeOfByte(String sizeOfByte) {
 		this.sizeOfByte = sizeOfByte;
